@@ -213,14 +213,18 @@ export function Page5Candles({ page }: Page5CandlesProps) {
         if (micStatusRef.current !== 'listening' || !candlesLitRef.current) return;
         analyser.getByteTimeDomainData(samples);
         let energy = 0;
+        let peak = 0;
         for (const sample of samples) {
           const centered = (sample - 128) / 128;
           energy += centered * centered;
+          peak = Math.max(peak, Math.abs(centered));
         }
         const volume = Math.sqrt(energy / samples.length);
-        if (volume > 0.085) {
+        // Phone microphones apply different amounts of gain, so combine a
+        // lower RMS threshold with a peak threshold to catch a close breath.
+        if (volume > 0.035 || peak > 0.14) {
           if (!loudSince) loudSince = performance.now();
-          if (performance.now() - loudSince > 500) {
+          if (performance.now() - loudSince > 320) {
             setMicStatus('idle');
             completeBlowOut();
             return;
