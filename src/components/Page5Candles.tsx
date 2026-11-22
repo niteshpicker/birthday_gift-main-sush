@@ -123,6 +123,7 @@ export function Page5Candles({ page }: Page5CandlesProps) {
   const [holdProgress, setHoldProgress] = useState(0);
   const [micStatus, setMicStatus] = useState<'idle' | 'listening' | 'unsupported' | 'denied'>('idle');
   const [showManualBlow, setShowManualBlow] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
 
   const rafRef = useRef<number | null>(null);
   const isHoldingRef = useRef(false);
@@ -142,6 +143,7 @@ export function Page5Candles({ page }: Page5CandlesProps) {
     micFallbackTimerRef.current = null;
     if (micFrameRef.current !== null) cancelAnimationFrame(micFrameRef.current);
     micFrameRef.current = null;
+    setMicLevel(0);
     micStreamRef.current?.getTracks().forEach((track) => track.stop());
     micStreamRef.current = null;
     const context = micContextRef.current;
@@ -220,6 +222,7 @@ export function Page5Candles({ page }: Page5CandlesProps) {
           peak = Math.max(peak, Math.abs(centered));
         }
         const volume = Math.sqrt(energy / samples.length);
+        setMicLevel(Math.min(1, volume * 5));
         // Phone microphones apply different amounts of gain, so combine a
         // lower RMS threshold with a peak threshold to catch a close breath.
         if (volume > 0.035 || peak > 0.14) {
@@ -439,6 +442,12 @@ export function Page5Candles({ page }: Page5CandlesProps) {
                 <Mic className="h-4 w-4" />
                 {micStatus === 'listening' ? 'Listening… blow toward the mic (tap to stop)' : 'Try blowing with your mic'}
               </button>
+                {micStatus === 'listening' && <div className="space-y-1 px-1" aria-live="polite">
+                  <div className="h-2 overflow-hidden rounded-full bg-[#F0E8EB]" role="meter" aria-label="Microphone input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(micLevel * 100)}>
+                    <div className="h-full rounded-full bg-gradient-to-r from-[#F4C66A] via-[#F28D72] to-[#E12D53] transition-[width] duration-75" style={{ width: `${micLevel * 100}%` }} />
+                  </div>
+                  <p className="text-[10px] text-[#8B737E]">{micLevel > 0.17 ? 'Sound detected — keep blowing!' : micLevel > 0.035 ? 'Mic is picking up sound. Blow a little closer.' : 'Mic connected — waiting for sound…'}</p>
+                </div>}
                 {micStatus === 'unsupported' && <p className="text-[10px] text-[#A15C6B]">Microphone access isn’t available here.</p>}
                 {micStatus === 'denied' && <p className="text-[10px] text-[#A15C6B]">Mic access was unavailable. Allow microphone access to try again.</p>}
                 {showManualBlow && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[10px] text-[#A15C6B]">Still lit? You can blow them out manually:</motion.p>}
