@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.github
+.vercel
+.env*
+*.tsbuildinfo
+ref_capture_images
+Dockerfile
+docker-compose.yml
+.dockerignore
+docker
+README.md

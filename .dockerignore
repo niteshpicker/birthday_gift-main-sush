@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.github
+.vercel
+.env*
+*.tsbuildinfo
+ref_capture_images
+README.md

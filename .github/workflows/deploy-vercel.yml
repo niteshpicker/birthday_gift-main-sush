@@ -1,0 +1,115 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target Vercel environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - preview
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: Build & Deploy (${{ github.event_name }})
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Validate Vercel CI secrets
+        run: |
+          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_ORG_ID:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ]; then
+            echo "::error::Missing required GitHub Secrets: VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID."
+            exit 1
+          fi
+
+      - name: Determine target environment
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "env=preview" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "env=${{ github.event.inputs.environment }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=production" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript check
+        run: npm run typecheck
+
+      - name: Install pinned Vercel CLI
+        run: npm install -g vercel@65.16.0
+
+      - name: Pull Vercel environment configuration
+        run: vercel pull --yes --environment=${{ steps.target.outputs.env }}
+
+      - name: Build prebuilt Vercel output
+        env:
+          SITE_URL_OVERRIDE: ${{ vars.SITE_URL }}
+        run: |
+          if [ "${{ steps.target.outputs.env }}" = "production" ]; then
+            export VITE_SITE_URL="${SITE_URL_OVERRIDE:-https://hpbd-phuong-ngoc.vercel.app}"
+            vercel build --prod
+          else
+            vercel build
+          fi
+
+      - name: Deploy prebuilt output to Vercel
+        id: deploy
+        run: |
+          if [ "${{ steps.target.outputs.env }}" = "production" ]; then
+            DEPLOY_URL="$(vercel deploy --prebuilt --prod --yes)"
+          else
+            DEPLOY_URL="$(vercel deploy --prebuilt --yes)"
+          fi
+          echo "url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify production deployment URL
+        if: steps.target.outputs.env == 'production'
+        run: |
+          curl -sfI "https://hpbd-phuong-ngoc.vercel.app" | grep -qi '200'
+          curl -sfI "https://hpbd-phuong-ngoc.vercel.app/og-cover.png" | grep -qi '200'
+
+      - name: Comment preview URL on Pull Request
+        if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Vercel Preview Deployment ready: ${{ steps.deploy.outputs.url }}`
+            });
